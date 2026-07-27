@@ -7,6 +7,8 @@ import { UnsupportedFieldTypeError, isJsonFieldSchema } from '@ez4/pgclient';
 import { isDate, isDateTime, isTime, isUUID } from '@ez4/utils';
 import { SchemaType } from '@ez4/schema';
 
+const TIME_PATTERN = /^\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?/;
+
 export const prepareFieldData = (name: string, value: unknown, schema: AnySchema): SqlParameter => {
   if (isJsonFieldSchema(schema)) {
     return getJsonFieldData(name, value as object);
@@ -82,14 +84,18 @@ export const detectFieldData = (name: string, value: unknown): SqlParameter => {
   }
 };
 
-export const parseFieldRecords = (records: Field[][], columns: ColumnMetadata[]): AnyObject[] => {
-  const names = columns.map(({ label, name }) => label ?? name ?? '');
+export const parseRecordsWithMetadata = (records: Field[][], metadata: ColumnMetadata[]): AnyObject[] => {
+  const columns = metadata.map(({ label, name }, index) => label ?? name ?? `${++index}`);
 
+  return parseRecordsWithColumns(records, columns);
+};
+
+export const parseRecordsWithColumns = (records: Field[][], columns: string[]): AnyObject[] => {
   return records.map((record) => {
     const result: AnyObject = {};
 
-    for (let index = 0; index < names.length; index++) {
-      result[names[index]] = readFieldValue(record[index]);
+    for (let index = 0; index < columns.length; index++) {
+      result[columns[index]] = readFieldValue(record[index]);
     }
 
     return result;
@@ -149,7 +155,7 @@ const getDateFieldData = (name: string, value: string): SqlParameter => {
 };
 
 const getTimeFieldData = (name: string, value: string): SqlParameter => {
-  const time = value.substring(0, 8);
+  const time = TIME_PATTERN.exec(value)?.[0] ?? value.substring(0, 8);
 
   return {
     typeHint: TypeHint.TIME,
@@ -158,10 +164,10 @@ const getTimeFieldData = (name: string, value: string): SqlParameter => {
 };
 
 const getDateTimeFieldData = (name: string, value: string): SqlParameter => {
-  const timestamp = new Date(value).toISOString().substring(0, 19);
+  const timestamp = new Date(value).toISOString();
 
   const isoDate = timestamp.substring(0, 10);
-  const isoTime = timestamp.substring(11, 19);
+  const isoTime = timestamp.substring(11, 23);
 
   return {
     typeHint: TypeHint.TIMESTAMP,

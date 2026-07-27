@@ -1,5 +1,5 @@
 import type { SqlSourceWithResults, SqlRecord, SqlBuilder, SqlUpdateStatement } from '@ez4/pgsql';
-import type { NumberSchema, ObjectSchema, UnionSchema } from '@ez4/schema';
+import type { AnySchema, NumberSchema, ObjectSchema, UnionSchema } from '@ez4/schema';
 import type { AnyObject } from '@ez4/utils';
 import type { Query } from '@ez4/database';
 import type { PgRelationRepositoryWithSchema, PgRelationWithSchema } from '../types/repository';
@@ -7,8 +7,8 @@ import type { InternalTableMetadata } from '../types/table';
 
 import { InvalidAtomicOperation, InvalidFieldSchemaError, InvalidRelationFieldError } from '@ez4/pgclient';
 import { getOptionalSchema, getSchemaProperty, isNumberSchema, isObjectSchema, isUnionSchema } from '@ez4/schema';
-import { escapeSqlName, SqlSelectStatement } from '@ez4/pgsql';
-import { isAnyObject, isEmptyObject } from '@ez4/utils';
+import { isAnyObject, isEmptyObject, isNullish } from '@ez4/utils';
+import { SqlSelectStatement } from '@ez4/pgsql';
 import { Index } from '@ez4/database';
 
 import { getConnectionSchema, isSingleRelationData } from '../utils/relation';
@@ -24,72 +24,76 @@ export const prepareUpdateQuery = async <T extends InternalTableMetadata, S exte
   table: string,
   schema: ObjectSchema,
   relations: PgRelationRepositoryWithSchema,
-  query: Query.UpdateOneInput<S, T> | Query.UpdateManyInput<S, T>,
+  input: Query.UpdateOneInput<S, T> | Query.UpdateManyInput<S, T>,
   options?: UpdateQueryOptions
 ) => {
-  const updateRecord = await getUpdateRecord(builder, query.data, schema, relations, table);
+  const updateRecord = await getUpdateRecord(builder, input.data, schema, relations, table);
 
   const updateQuery = !isEmptyObject(updateRecord)
     ? builder.update(schema).only(table).record(updateRecord).returning()
     : builder.select(schema).from(table);
 
-  const allQueries: (SqlSelectStatement | SqlUpdateStatement)[] = [];
+  const queries: (SqlSelectStatement | SqlUpdateStatement)[] = [];
+  const columns = input.select ? Object.keys(input.select) : [];
 
-  if (query.select) {
+  if (input.select) {
     if (updateQuery instanceof SqlSelectStatement) {
-      const selectFields = getSelectFields(builder, query.select, query.include, schema, relations, updateQuery, table);
+      const selectFields = getSelectFields(builder, input.select, input.include, schema, relations, updateQuery, table);
 
       updateQuery.record(selectFields);
 
-      if (query.lock) {
+      if (input.lock) {
         updateQuery.lock();
       }
     } else {
       const selectQuery = builder.select(schema).from(table);
-      const selectFields = getSelectFields(builder, query.select, query.include, schema, relations, selectQuery, table);
+      const selectFields = getSelectFields(builder, input.select, input.include, schema, relations, selectQuery, table);
 
-      if (query.where) {
-        selectQuery.where(getSelectFilters(builder, query.where, relations, selectQuery, table));
+      if (input.where) {
+        selectQuery.where(getSelectFilters(builder, input.where, relations, selectQuery, table));
       }
 
-      if (query.lock) {
+      if (input.lock) {
         selectQuery.lock();
       }
 
       updateQuery.from(selectQuery.reference()).as('U');
       selectQuery.record(selectFields);
 
-      allQueries.push(selectQuery);
+      queries.push(selectQuery);
     }
   }
 
-  const postUpdateQueries = preparePostUpdateRelations(builder, query.data, relations, updateQuery, table);
+  const postUpdateQueries = preparePostUpdateRelations(builder, input.data, relations, updateQuery, table);
 
-  allQueries.push(updateQuery, ...postUpdateQueries);
+  queries.push(updateQuery, ...postUpdateQueries);
 
-  if (query.where) {
-    updateQuery.where(getSelectFilters(builder, query.where, relations, updateQuery, table));
+  if (input.where) {
+    updateQuery.where(getSelectFilters(builder, input.where, relations, updateQuery, table));
   }
 
-  if (query.select && (postUpdateQueries.length > 0 || !(updateQuery instanceof SqlSelectStatement))) {
-    const [firstQuery] = allQueries;
+  if (input.select && (postUpdateQueries.length > 0 || !(updateQuery instanceof SqlSelectStatement))) {
+    const [firstQuery] = queries;
 
-    allQueries.push(
+    queries.push(
       builder
         .select()
-        .columns(...Object.keys(query.select))
         .from(firstQuery.reference())
+        .columns(...columns)
     );
   }
 
   if (options?.flag) {
-    const resultQuery = allQueries[allQueries.length - 1];
-    const flagColumn = `1 AS ${escapeSqlName(options.flag)}`;
+    const resultQuery = queries[queries.length - 1];
 
-    resultQuery.results?.rawColumn(flagColumn);
+    resultQuery.results?.rawColumn(1, options.flag);
+    columns.push(options.flag);
   }
 
-  return allQueries;
+  return {
+    columns,
+    queries
+  };
 };
 
 export const getUpdateRecord = async (
@@ -139,6 +143,7 @@ export const getUpdateRecord = async (
 
     const fieldSchema = getSchemaProperty(schema, fieldKey);
 
+    // Skip values that aren't mapped in the table schema.
     if (!fieldSchema) {
       continue;
     }
@@ -149,7 +154,23 @@ export const getUpdateRecord = async (
     }
 
     if (isNumberSchema(fieldSchema)) {
-      record[fieldKey] = await getAtomicOperationUpdate(builder, fieldKey, fieldValue, fieldSchema, fieldPath);
+      const atomicResult = await getAtomicNumberOperationUpdate(builder, fieldKey, fieldValue, fieldSchema, fieldPath);
+
+      if (atomicResult) {
+        record[fieldKey] = atomicResult;
+        continue;
+      }
+    }
+
+    const atomicOperation = await getAtomicObjectOperationUpdate(builder, fieldKey, fieldValue, fieldSchema, fieldPath);
+
+    if (atomicOperation) {
+      const [recordValue] = atomicOperation;
+
+      if (recordValue) {
+        record[fieldKey] = recordValue;
+      }
+
       continue;
     }
 
@@ -163,7 +184,7 @@ export const getUpdateRecord = async (
       continue;
     }
 
-    throw new InvalidFieldSchemaError(fieldKey);
+    throw new InvalidFieldSchemaError(fieldPath);
   }
 
   return record;
@@ -176,7 +197,7 @@ const preparePostUpdateRelations = (
   source: SqlSourceWithResults,
   table: string
 ) => {
-  const allQueries = [];
+  const queries = [];
 
   const { results } = source;
 
@@ -217,7 +238,7 @@ const preparePostUpdateRelations = (
         relationQuery.where({ [sourceColumn]: source.reference(targetColumn) });
         relationQuery.record({ [sourceColumn]: relationValue });
 
-        allQueries.push(relationQuery);
+        queries.push(relationQuery);
         continue;
       }
 
@@ -241,7 +262,7 @@ const preparePostUpdateRelations = (
         relationQuery.record({ [sourceColumn]: detachQuery.reference(targetColumn) });
         relationQuery.from(detachQuery.reference());
 
-        allQueries.push(detachQuery, relationQuery);
+        queries.push(detachQuery, relationQuery);
         continue;
       }
 
@@ -252,7 +273,7 @@ const preparePostUpdateRelations = (
 
       relationQuery.record({ [sourceColumn]: source.reference(targetColumn) });
 
-      allQueries.push(relationQuery);
+      queries.push(relationQuery);
       continue;
     }
 
@@ -270,14 +291,14 @@ const preparePostUpdateRelations = (
         .only(sourceTable)
         .as('T');
 
-      allQueries.push(relationQuery);
+      queries.push(relationQuery);
     }
   }
 
-  return allQueries;
+  return queries;
 };
 
-const getAtomicOperationUpdate = async (
+const getAtomicNumberOperationUpdate = async (
   builder: SqlBuilder,
   fieldKey: string,
   fieldValue: AnyObject,
@@ -287,27 +308,75 @@ const getAtomicOperationUpdate = async (
   for (const operation in fieldValue) {
     const value = fieldValue[operation];
 
-    if (value === undefined || value === null) {
+    if (isNullish(value)) {
       continue;
     }
 
-    await validateRecordSchema(value, fieldSchema, fieldPath);
+    switch (operation) {
+      default: {
+        throw new InvalidAtomicOperation(`${fieldPath}.${fieldKey}`);
+      }
+
+      case 'removeFrom': {
+        return undefined;
+      }
+
+      case 'increment': {
+        await validateRecordSchema(value, fieldSchema, fieldPath);
+
+        return builder.rawOperation('+', value);
+      }
+
+      case 'decrement': {
+        await validateRecordSchema(value, fieldSchema, fieldPath);
+
+        return builder.rawOperation('-', value);
+      }
+
+      case 'multiply': {
+        return builder.rawOperation('*', value);
+      }
+
+      case 'divide': {
+        await validateRecordSchema(value, fieldSchema, fieldPath);
+
+        return builder.rawOperation('/', value);
+      }
+    }
+  }
+
+  return undefined;
+};
+
+export const getAtomicObjectOperationUpdate = async (
+  builder: SqlBuilder,
+  fieldKey: string,
+  fieldValue: AnyObject,
+  fieldSchema: AnySchema,
+  fieldPath: string
+) => {
+  for (const operation in fieldValue) {
+    const value = fieldValue[operation];
 
     switch (operation) {
       default:
-        throw new InvalidAtomicOperation(`${fieldPath}.${fieldKey}`);
+        return undefined;
 
-      case 'increment':
-        return builder.rawOperation('+', value);
+      case 'replaceWith': {
+        if (value !== undefined) {
+          return [builder.rawValue(await getWithSchemaValidation(value, fieldSchema, fieldPath))];
+        }
 
-      case 'decrement':
-        return builder.rawOperation('-', value);
+        return [];
+      }
 
-      case 'multiply':
-        return builder.rawOperation('*', value);
+      case 'removeFrom': {
+        if (value) {
+          return [builder.rawOperation('#-', `{${fieldKey}}`)];
+        }
 
-      case 'divide':
-        return builder.rawOperation('/', value);
+        return [];
+      }
     }
   }
 
