@@ -1,34 +1,35 @@
+import type { PublishInput, PublishCommand, SNSClient } from '@aws-sdk/client-sns';
 import type { Topic, Client as SnsClient } from '@ez4/topic';
-import type { MessageSchema } from '@ez4/topic/utils';
-import type { PublishInput } from '@aws-sdk/client-sns';
+import type { EventSchema } from '@ez4/topic/utils';
 import type { AnyObject } from '@ez4/utils';
 
-import { getJsonStringMessage, MissingMessageGroupError } from '@ez4/topic/utils';
-import { PublishCommand, SNSClient } from '@aws-sdk/client-sns';
+import { getJsonStringEvent, MissingEventGroupError } from '@ez4/topic/utils';
 import { getRandomUUID } from '@ez4/utils';
 import { Runtime } from '@ez4/common';
 
 type FifoParameters = Pick<PublishInput, 'MessageGroupId' | 'MessageDeduplicationId'>;
 
-export namespace Client {
-  const client = new SNSClient();
+type SnsCache = {
+  snsClient: SNSClient;
+  PublishCommand: typeof PublishCommand;
+};
 
-  export const make = <T extends Topic.Message>(
-    topicArn: string,
-    messageSchema: MessageSchema,
-    fifoMode?: Topic.FifoMode<T>
-  ): SnsClient<T> => {
+let SNS_CACHE: Promise<SnsCache> | undefined;
+
+export namespace Client {
+  export const make = <T extends Topic.Event>(topicArn: string, eventSchema: EventSchema, fifoMode?: Topic.FifoMode<T>): SnsClient<T> => {
     return new (class {
-      async sendMessage(message: T) {
-        const messageBody = await getJsonStringMessage(message, messageSchema);
+      async publishEvent(event: T) {
+        const [payload, { snsClient, PublishCommand }] = await Promise.all([getJsonStringEvent(event, eventSchema), getSnsClient()]);
+
         const scope = Runtime.getScope();
 
-        await client.send(
+        await snsClient.send(
           new PublishCommand({
             TargetArn: topicArn,
-            Message: messageBody,
+            Message: payload,
             ...(fifoMode && {
-              ...getFifoParameters(message, fifoMode)
+              ...getFifoParameters(event, fifoMode)
             }),
             MessageAttributes: {
               ['EZ4.TRACE_ID']: {
@@ -43,22 +44,40 @@ export namespace Client {
   };
 }
 
-const getFifoParameters = <T extends Topic.Message>(message: AnyObject, fifoMode: Topic.FifoMode<T>) => {
+const getFifoParameters = <T extends Topic.Event>(event: AnyObject, fifoMode: Topic.FifoMode<T>) => {
   const parameters: FifoParameters = {};
 
   if (fifoMode) {
     const { groupId, uniqueId } = fifoMode;
 
-    parameters.MessageGroupId = `${message[groupId]}`;
+    parameters.MessageGroupId = `${event[groupId]}`;
 
     if (!parameters.MessageGroupId) {
-      throw new MissingMessageGroupError(groupId.toString());
+      throw new MissingEventGroupError(groupId.toString());
     }
 
-    if (uniqueId && message[uniqueId]) {
-      parameters.MessageDeduplicationId = `${message[uniqueId]}`;
+    if (uniqueId && event[uniqueId]) {
+      parameters.MessageDeduplicationId = `${event[uniqueId]}`;
     }
   }
 
   return parameters;
+};
+
+const getSnsClient = async () => {
+  if (!SNS_CACHE) {
+    SNS_CACHE = import('@aws-sdk/client-sns')
+      .then(({ SNSClient, PublishCommand }) => {
+        return {
+          snsClient: new SNSClient(),
+          PublishCommand
+        };
+      })
+      .catch((error) => {
+        SNS_CACHE = undefined;
+        throw error;
+      });
+  }
+
+  return SNS_CACHE;
 };

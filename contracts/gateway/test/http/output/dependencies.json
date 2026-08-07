@@ -1,0 +1,90 @@
+{
+  "@variables": {
+    "type": "@ez4/common",
+    "name": "@variables",
+    "context": {}
+  },
+  "@options": {
+    "type": "@ez4/common",
+    "name": "@options",
+    "context": {}
+  },
+  "TestValidation": {
+    "type": "@ez4/validation",
+    "name": "TestValidation",
+    "file": "test/http/input/output-dependencies.ts",
+    "schema": {
+      "type": "string"
+    },
+    "context": {},
+    "variables": {},
+    "services": {},
+    "handler": {
+      "file": "test/http/input/output-dependencies.ts",
+      "name": "performValidation",
+      "position": [
+        9,
+        1
+      ]
+    }
+  },
+  "TestService": {
+    "type": "@ez4/http",
+    "name": "TestService",
+    "file": "test/http/input/output-dependencies.ts",
+    "context": {},
+    "variables": {},
+    "services": {
+      "selfOptions": {
+        "reference": "@options"
+      },
+      "selfVariables": {
+        "reference": "@variables"
+      },
+      "selfClient": {
+        "reference": "TestService"
+      }
+    },
+    "routes": [
+      {
+        "path": "GET /test-route",
+        "handler": {
+          "name": "testRoute",
+          "file": "test/http/input/output-dependencies.ts",
+          "isolated": true,
+          "position": [
+            30,
+            1
+          ],
+          "request": {
+            "body": {
+              "type": "string"
+            }
+          },
+          "references": [
+            "selfOptions",
+            "selfVariables"
+          ],
+          "provider": {
+            "name": "TestService",
+            "file": "test/http/input/output-dependencies.ts",
+            "services": {
+              "selfOptions": {
+                "reference": "@options"
+              },
+              "selfVariables": {
+                "reference": "@variables"
+              },
+              "selfClient": {
+                "reference": "TestService"
+              }
+            }
+          },
+          "response": {
+            "status": 204
+          }
+        }
+      }
+    ]
+  }
+}

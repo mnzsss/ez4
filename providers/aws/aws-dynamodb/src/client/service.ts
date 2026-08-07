@@ -105,7 +105,7 @@ const prepareStaticTransaction = async <T extends Database.Service<any>>(
       throw new MissingRepositoryTableError(tableAlias);
     }
 
-    const { name, schema } = repositoryTable;
+    const { name, schema, indexes } = repositoryTable;
 
     for (const query of operationTable) {
       if (!query) {
@@ -113,12 +113,12 @@ const prepareStaticTransaction = async <T extends Database.Service<any>>(
       }
 
       if ('insert' in query) {
-        commands.push(await prepareInsertOne(name, schema, query.insert));
+        commands.push(await prepareInsertOne(name, schema, indexes, query.insert));
         continue;
       }
 
       if ('update' in query) {
-        commands.push(await prepareUpdateOne(name, schema, query.update));
+        commands.push(await prepareUpdateOne(name, schema, indexes, query.update));
         continue;
       }
 

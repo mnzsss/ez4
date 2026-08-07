@@ -4,10 +4,10 @@ import type { Query } from '@ez4/database';
 import type { InternalTableMetadata } from '../types';
 
 import { InvalidAtomicOperation, InvalidFieldSchemaError } from '@ez4/aws-dynamodb/runtime';
-import { getOptionalSchema, getSchemaProperty, isNumberSchema, isObjectSchema, isUnionSchema } from '@ez4/schema';
-import { isAnyObject, isNullish } from '@ez4/utils';
+import { getOptionalSchema, getSchemaProperty, isNullishSchema, isNumberSchema, isObjectSchema, isUnionSchema } from '@ez4/schema';
+import { arrayUnique, isAnyObject, isNullish } from '@ez4/utils';
 
-import { getWithSchemaValidation, isDynamicFieldSchema, validateRecordSchema } from './schema';
+import { getWithSchemaValidation, isDynamicObjectField, isDynamicUnionField, validateRecordSchema } from './schema';
 import { prepareWhereFields } from './where';
 
 type PrepareResult = [string, unknown[]];
@@ -15,9 +15,12 @@ type PrepareResult = [string, unknown[]];
 export const prepareUpdate = async <T extends InternalTableMetadata, S extends Query.SelectInput<T>>(
   table: string,
   schema: ObjectSchema,
+  indexes: string[][],
   query: Query.UpdateOneInput<S, T> | Query.UpdateManyInput<S, T>
 ): Promise<PrepareResult> => {
-  const [updateFields, variables] = await prepareUpdateFields(query.data, schema);
+  const uniqueIndexes = arrayUnique(...indexes);
+
+  const [updateFields, variables] = await prepareUpdateFields(query.data, schema, uniqueIndexes);
 
   const statement = [`UPDATE "${table}" ${updateFields || `REMOVE "__EZ4_NOOP"`}`];
 
@@ -37,7 +40,12 @@ export const prepareUpdate = async <T extends InternalTableMetadata, S extends Q
   return [statement.join(' '), variables];
 };
 
-const prepareUpdateFields = async (data: AnyObject, schema: ObjectSchema | UnionSchema, path?: string): Promise<PrepareResult> => {
+const prepareUpdateFields = async (
+  data: AnyObject,
+  schema: ObjectSchema | UnionSchema,
+  indexes: string[],
+  path?: string
+): Promise<PrepareResult> => {
   const operations: string[] = [];
   const variables: unknown[] = [];
 
@@ -50,16 +58,32 @@ const prepareUpdateFields = async (data: AnyObject, schema: ObjectSchema | Union
 
     const fieldSchema = getSchemaProperty(schema, fieldKey);
 
-    // Skip values that aren't mapped in the table schema.
+    const fieldPath = path ? `${path}."${fieldKey}"` : `"${fieldKey}"`;
+
+    // Skip values that aren't mapped and isn't part of any dynamic table schema.
     if (!fieldSchema) {
+      if (isDynamicUnionField(schema)) {
+        operations.push(`SET ${fieldPath} = ?`);
+        variables.push(fieldValue);
+      }
+
       continue;
     }
 
-    const fieldPath = path ? `${path}."${fieldKey}"` : `"${fieldKey}"`;
+    if (fieldValue === null && isNullishSchema(fieldSchema)) {
+      if (!indexes.includes(fieldKey)) {
+        operations.push(`SET ${fieldPath} = null`);
+        continue;
+      }
+
+      // Remove null indexes since DynamoDB doesn't allow it.
+      operations.push(`REMOVE ${fieldPath}`);
+      continue;
+    }
 
     if (!isAnyObject(fieldValue)) {
       operations.push(`SET ${fieldPath} = ?`);
-      variables.push(fieldValue);
+      variables.push(await getWithSchemaValidation(fieldValue, fieldSchema, fieldPath));
       continue;
     }
 
@@ -87,14 +111,14 @@ const prepareUpdateFields = async (data: AnyObject, schema: ObjectSchema | Union
       continue;
     }
 
-    if (isDynamicFieldSchema(fieldSchema)) {
-      const nestedValues = await getWithSchemaValidation<AnyObject>(fieldValue, getOptionalSchema(fieldSchema), fieldPath);
+    if (isDynamicObjectField(fieldSchema)) {
+      const dynamicValue = await getWithSchemaValidation<AnyObject>(fieldValue, getOptionalSchema(fieldSchema), fieldPath);
 
-      for (const nestedKey in nestedValues) {
-        const value = nestedValues[nestedKey];
+      for (const dynamicField in dynamicValue) {
+        const value = dynamicValue[dynamicField];
 
         if (value !== undefined) {
-          operations.push(`SET ${fieldPath}."${nestedKey}" = ?`);
+          operations.push(`SET ${fieldPath}."${dynamicField}" = ?`);
           variables.push(value);
         }
       }
@@ -103,7 +127,9 @@ const prepareUpdateFields = async (data: AnyObject, schema: ObjectSchema | Union
     }
 
     if (isObjectSchema(fieldSchema) || isUnionSchema(fieldSchema)) {
-      const [nestedOperations, nestedVariables] = await prepareUpdateFields(fieldValue, getOptionalSchema(fieldSchema), fieldPath);
+      const nestedValue = await prepareUpdateFields(fieldValue, getOptionalSchema(fieldSchema), [], fieldPath);
+
+      const [nestedOperations, nestedVariables] = nestedValue;
 
       operations.push(nestedOperations);
       variables.push(...nestedVariables);

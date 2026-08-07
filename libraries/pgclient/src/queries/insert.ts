@@ -26,9 +26,9 @@ import {
   isMultipleRelationData,
   isSingleRelationData,
   isRelationalData
-} from '../utils/relation';
+} from './utils/relation';
 
-import { getFormattedColumn } from '../utils/formats';
+import { getFormattedColumn } from './utils/formats';
 import { getWithSchemaValidation, validateRecordSchema } from '../utils/schema';
 import { getDefaultSelectFields, getSelectFields } from './select';
 
@@ -393,7 +393,7 @@ const getInsertSelectFields = (
 
       // Inserted relations
       if (relationQueries.length > 1) {
-        relationQuery.from(builder.union(relationQueries.map((input) => builder.select().from(input.reference()))));
+        relationQuery.from(builder.union(relationQueries.map((input) => builder.select().rawColumn('*').from(input.reference()))));
       } else {
         relationQuery.from(...relationQueries.map((input) => input.reference()));
       }

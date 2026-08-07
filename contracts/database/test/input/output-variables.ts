@@ -20,7 +20,7 @@ export declare class TestDatabase extends Database.Service<TestEngine> {
   };
 
   services: {
-    selfSettings: Environment.ServiceVariables;
+    selfVariables: Environment.ServiceVariables;
   };
 }
 
@@ -29,9 +29,9 @@ declare class TestSchema implements Database.Schema {
 }
 
 function streamHandler(_change: StreamAnyChange<TestSchema>, context: Service.Context<TestDatabase>) {
-  const { selfSettings } = context;
+  const { selfVariables } = context;
 
   // Ensure variables are property referenced.
-  selfSettings.TEST_VAR1;
-  selfSettings.TEST_VAR2;
+  selfVariables.TEST_VAR1;
+  selfVariables.TEST_VAR2;
 }

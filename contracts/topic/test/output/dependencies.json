@@ -1,0 +1,52 @@
+{
+  "@variables": {
+    "type": "@ez4/common",
+    "name": "@variables",
+    "context": {}
+  },
+  "@options": {
+    "type": "@ez4/common",
+    "name": "@options",
+    "context": {}
+  },
+  "TestTopic": {
+    "type": "@ez4/topic",
+    "name": "TestTopic",
+    "file": "test/input/output-dependencies.ts",
+    "context": {},
+    "variables": {},
+    "services": {
+      "selfOptions": {
+        "reference": "@options"
+      },
+      "selfVariables": {
+        "reference": "@variables"
+      },
+      "selfClient": {
+        "reference": "TestTopic"
+      }
+    },
+    "schema": {
+      "type": "object",
+      "properties": {},
+      "identity": 1
+    },
+    "subscriptions": [
+      {
+        "type": "lambda",
+        "handler": {
+          "name": "testHandler",
+          "file": "test/input/output-dependencies.ts",
+          "position": [
+            20,
+            1
+          ],
+          "references": [
+            "selfOptions",
+            "selfVariables"
+          ]
+        }
+      }
+    ]
+  }
+}

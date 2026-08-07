@@ -2,7 +2,7 @@ import type { StringSchema } from '@ez4/schema';
 import type { StringFormatHandler } from '../types/string';
 import type { ValidationContext } from '../types/context';
 
-import { isAnyNumber, isNotNullish } from '@ez4/utils';
+import { isAnyBoolean, isAnyNumber, isAnyString, isNotNullish } from '@ez4/utils';
 
 import { DuplicateStringFormatError } from '../errors/format';
 import { ExpectedStringTypeError, UnexpectedMaxLengthError, UnexpectedMinLengthError, UnexpectedStringError } from '../errors/string';
@@ -15,20 +15,31 @@ const isDefaultAllowed = (value: unknown, schema: StringSchema) => {
   return value === undefined && isNotNullish(schema.definitions?.default);
 };
 
+const getValidationInput = (value: unknown, trim?: boolean, context?: ValidationContext) => {
+  if (context?.cast && (isAnyNumber(value) || isAnyBoolean(value))) {
+    return value.toString();
+  }
+
+  if (trim && isAnyString(value)) {
+    return value.trim();
+  }
+
+  return value;
+};
+
 export const validateString = async (value: unknown, schema: StringSchema, context?: ValidationContext) => {
   if (isNullishAllowed(value, schema) || isDefaultAllowed(value, schema)) {
     return [];
   }
 
-  const property = context?.property;
-
-  if (typeof value !== 'string') {
-    return [new ExpectedStringTypeError(value, property)];
-  }
-
   const definitions = schema.definitions;
 
-  const input = definitions?.trim ? value.trim() : value;
+  const input = getValidationInput(value, definitions?.trim, context);
+  const property = context?.property;
+
+  if (!isAnyString(input)) {
+    return [new ExpectedStringTypeError(value, property)];
+  }
 
   if (definitions?.value && input !== definitions.value) {
     return [new UnexpectedStringError(value, definitions.value, property)];
@@ -45,7 +56,7 @@ export const validateString = async (value: unknown, schema: StringSchema, conte
   const allErrors = await validateStringFormat(input, schema, property);
 
   if (!allErrors.length && definitions?.types && context) {
-    return useCustomValidation(value, schema, definitions.types, context);
+    return useCustomValidation(input, schema, definitions.types, context);
   }
 
   return allErrors;

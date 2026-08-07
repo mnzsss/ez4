@@ -11,8 +11,8 @@ import { isAnyObject, isEmptyObject, isNullish } from '@ez4/utils';
 import { SqlSelectStatement } from '@ez4/pgsql';
 import { Index } from '@ez4/database';
 
-import { getConnectionSchema, isSingleRelationData } from '../utils/relation';
-import { getWithSchemaValidation, isDynamicFieldSchema, validateRecordSchema } from '../utils/schema';
+import { getConnectionSchema, isSingleRelationData } from './utils/relation';
+import { getWithSchemaValidation, isDynamicObjectField, isDynamicUnionField, validateRecordSchema } from '../utils/schema';
 import { getSelectFields, getSelectFilters } from './select';
 
 export type UpdateQueryOptions = {
@@ -28,8 +28,9 @@ export const prepareUpdateQuery = async <T extends InternalTableMetadata, S exte
   options?: UpdateQueryOptions
 ) => {
   const updateRecord = await getUpdateRecord(builder, input.data, schema, relations, table);
+  const hasNoRecords = !isEmptyObject(updateRecord);
 
-  const updateQuery = !isEmptyObject(updateRecord)
+  const updateQuery = hasNoRecords
     ? builder.update(schema).only(table).record(updateRecord).returning()
     : builder.select(schema).from(table);
 
@@ -143,8 +144,12 @@ export const getUpdateRecord = async (
 
     const fieldSchema = getSchemaProperty(schema, fieldKey);
 
-    // Skip values that aren't mapped in the table schema.
+    // Skip values that aren't mapped and isn't part of any dynamic table schema.
     if (!fieldSchema) {
+      if (isDynamicUnionField(schema)) {
+        record[fieldKey] = fieldValue;
+      }
+
       continue;
     }
 
@@ -174,7 +179,7 @@ export const getUpdateRecord = async (
       continue;
     }
 
-    if (isDynamicFieldSchema(fieldSchema)) {
+    if (isDynamicObjectField(fieldSchema)) {
       record[fieldKey] = await getWithSchemaValidation(fieldValue, getOptionalSchema(fieldSchema), fieldPath);
       continue;
     }

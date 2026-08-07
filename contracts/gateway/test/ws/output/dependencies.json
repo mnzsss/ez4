@@ -1,0 +1,235 @@
+{
+  "@variables": {
+    "type": "@ez4/common",
+    "name": "@variables",
+    "context": {}
+  },
+  "@options": {
+    "type": "@ez4/common",
+    "name": "@options",
+    "context": {}
+  },
+  "TestValidation": {
+    "type": "@ez4/validation",
+    "name": "TestValidation",
+    "file": "test/ws/input/output-dependencies.ts",
+    "context": {},
+    "variables": {},
+    "services": {},
+    "schema": {
+      "type": "string"
+    },
+    "handler": {
+      "file": "test/ws/input/output-dependencies.ts",
+      "name": "performValidation",
+      "position": [
+        9,
+        1
+      ]
+    }
+  },
+  "TestService": {
+    "type": "@ez4/ws",
+    "name": "TestService",
+    "file": "test/ws/input/output-dependencies.ts",
+    "displayName": "Test Service",
+    "context": {},
+    "variables": {},
+    "services": {
+      "@TestValidation": {
+        "reference": "TestValidation"
+      },
+      "selfOptions": {
+        "reference": "@options"
+      },
+      "selfVariables": {
+        "reference": "@variables"
+      },
+      "selfClient": {
+        "reference": "TestService"
+      }
+    },
+    "schema": {
+      "type": "object",
+      "identity": 1,
+      "properties": {
+        "identity": {
+          "type": "object",
+          "identity": 2,
+          "properties": {
+            "parameter": {
+              "type": "string",
+              "definitions": {
+                "custom": true,
+                "types": [
+                  "TestValidation"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "connect": {
+      "handler": {
+        "name": "connectHandler",
+        "file": "test/ws/input/output-dependencies.ts",
+        "position": [
+          61,
+          1
+        ],
+        "request": {
+          "identity": {
+            "type": "object",
+            "identity": 1,
+            "definitions": {
+              "extensible": true
+            },
+            "properties": {
+              "parameter": {
+                "type": "string",
+                "definitions": {
+                  "custom": true,
+                  "types": [
+                    "TestValidation"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "references": [
+          "selfOptions",
+          "selfVariables",
+          "@TestValidation"
+        ]
+      },
+      "authorizer": {
+        "name": "authorizerHandler",
+        "file": "test/ws/input/output-dependencies.ts",
+        "isolated": true,
+        "position": [
+          52,
+          1
+        ],
+        "request": {
+          "headers": {
+            "type": "object",
+            "identity": 1,
+            "properties": {
+              "foo": {
+                "type": "string",
+                "definitions": {
+                  "custom": true,
+                  "types": [
+                    "TestValidation"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "references": [
+          "selfOptions",
+          "selfVariables",
+          "@TestValidation"
+        ],
+        "provider": {
+          "name": "TestService",
+          "file": "test/ws/input/output-dependencies.ts",
+          "services": {
+            "@TestValidation": {
+              "reference": "TestValidation"
+            },
+            "selfOptions": {
+              "reference": "@options"
+            },
+            "selfVariables": {
+              "reference": "@variables"
+            },
+            "selfClient": {
+              "reference": "TestService"
+            }
+          }
+        },
+        "response": {
+          "identity": {
+            "type": "object",
+            "properties": {},
+            "identity": 1
+          }
+        }
+      }
+    },
+    "disconnect": {
+      "handler": {
+        "name": "disconnectHandler",
+        "file": "test/ws/input/output-dependencies.ts",
+        "position": [
+          66,
+          1
+        ],
+        "request": {
+          "identity": {
+            "type": "object",
+            "identity": 1,
+            "definitions": {
+              "extensible": true
+            },
+            "properties": {
+              "parameter": {
+                "type": "string",
+                "definitions": {
+                  "custom": true,
+                  "types": [
+                    "TestValidation"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "references": [
+          "selfOptions",
+          "selfVariables",
+          "@TestValidation"
+        ]
+      }
+    },
+    "message": {
+      "handler": {
+        "name": "messageHandler1",
+        "file": "test/ws/input/output-dependencies.ts",
+        "position": [
+          71,
+          1
+        ],
+        "request": {
+          "identity": {
+            "type": "object",
+            "identity": 1,
+            "definitions": {
+              "extensible": true
+            },
+            "properties": {
+              "parameter": {
+                "type": "string",
+                "definitions": {
+                  "custom": true,
+                  "types": [
+                    "TestValidation"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "references": [
+          "selfOptions",
+          "selfVariables",
+          "@TestValidation"
+        ]
+      }
+    }
+  }
+}

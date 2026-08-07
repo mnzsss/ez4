@@ -1,0 +1,43 @@
+{
+  "@variables": {
+    "type": "@ez4/common",
+    "name": "@variables",
+    "context": {}
+  },
+  "@options": {
+    "type": "@ez4/common",
+    "name": "@options",
+    "context": {}
+  },
+  "TestStorage": {
+    "type": "@ez4/bucket",
+    "name": "TestStorage",
+    "context": {},
+    "file": "test/input/output-dependencies.ts",
+    "variables": {},
+    "services": {
+      "selfOptions": {
+        "reference": "@options"
+      },
+      "selfVariables": {
+        "reference": "@variables"
+      },
+      "selfClient": {
+        "reference": "TestStorage"
+      }
+    },
+    "events": [
+      {
+        "path": "uploads/",
+        "handler": {
+          "name": "eventHandler",
+          "file": "test/input/output-dependencies.ts",
+          "position": [
+            19,
+            1
+          ]
+        }
+      }
+    ]
+  }
+}

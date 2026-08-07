@@ -1,4 +1,14 @@
 {
+  "@variables": {
+    "type": "@ez4/common",
+    "name": "@variables",
+    "context": {}
+  },
+  "@options": {
+    "type": "@ez4/common",
+    "name": "@options",
+    "context": {}
+  },
   "TestDatabase": {
     "type": "@ez4/database",
     "name": "TestDatabase",
@@ -6,6 +16,12 @@
     "context": {},
     "variables": {},
     "services": {
+      "selfOptions": {
+        "reference": "@options"
+      },
+      "selfVariables": {
+        "reference": "@variables"
+      },
       "selfClient": {
         "reference": "TestDatabase"
       }
@@ -33,21 +49,21 @@
         },
         "indexes": [],
         "stream": {
+          "logLevel": "debug",
           "architecture": "arm",
+          "logRetention": 14,
+          "timeout": 10,
+          "memory": 256,
           "handler": {
             "name": "streamHandler",
             "description": "Example of database stream.",
             "summary": "Database stream example.",
             "file": "test/input/output-stream.ts",
             "position": [
-              61,
+              63,
               1
             ]
-          },
-          "logLevel": "debug",
-          "logRetention": 14,
-          "timeout": 10,
-          "memory": 256
+          }
         }
       },
       {
@@ -71,7 +87,7 @@
             "summary": "Database stream example.",
             "file": "test/input/output-stream.ts",
             "position": [
-              61,
+              63,
               1
             ]
           },

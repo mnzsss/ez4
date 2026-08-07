@@ -71,10 +71,11 @@ export const prepareSubscriptions = (
 
           handlerState = createSubscriptionFunction(state, context.role, logGroupState, {
             functionName: subscriptionName,
-            messageSchema: service.schema,
+            eventSchema: service.schema,
             description: handler.summary ?? handler.description,
-            context: service.context,
             variables: [options.variables, service.variables, subscription.variables],
+            references: subscription.handler.references,
+            context: service.context,
             handler: {
               sourceFile: handler.file,
               functionName: handler.name,

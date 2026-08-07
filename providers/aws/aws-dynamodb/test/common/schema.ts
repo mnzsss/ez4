@@ -21,6 +21,9 @@ export type TestTableMetadata = {
       nestedA: string;
       nestedB: number;
     };
+    additional?: {
+      [key: number]: string;
+    };
   };
 };
 

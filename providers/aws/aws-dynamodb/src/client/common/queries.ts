@@ -15,11 +15,10 @@ import { prepareDelete } from './delete';
 export const prepareInsertOne = async <T extends InternalTableMetadata, S extends Query.SelectInput<T>>(
   table: string,
   schema: ObjectSchema,
+  indexes: string[][],
   query: Query.InsertOneInput<S, T>
 ): Promise<ExecuteStatementCommandInput> => {
-  await validateSchema(query.data, schema);
-
-  const [statement, variables] = prepareInsert(table, schema, query);
+  const [statement, variables] = await prepareInsert(table, schema, indexes, query);
 
   return {
     Statement: statement,
@@ -52,9 +51,10 @@ export const prepareFindOne = <T extends InternalTableMetadata, S extends Query.
 export const prepareUpdateOne = async <T extends InternalTableMetadata, S extends Query.SelectInput<T>>(
   table: string,
   schema: ObjectSchema,
+  indexes: string[][],
   query: Query.UpdateOneInput<S, T>
 ): Promise<ExecuteStatementCommandInput> => {
-  const [statement, variables] = await prepareUpdate(table, schema, query);
+  const [statement, variables] = await prepareUpdate(table, schema, indexes, query);
 
   return {
     Statement: statement,
@@ -104,7 +104,7 @@ export const prepareInsertMany = async <T extends InternalTableMetadata>(
 
     await validateSchema(data, schema);
 
-    const [statement, variables] = prepareInsert(table, schema, {
+    const [statement, variables] = await prepareInsert(table, schema, indexes, {
       data
     });
 
@@ -173,7 +173,7 @@ export const prepareUpdateMany = async <T extends InternalTableMetadata, S exten
     records.map(async (record) => {
       const { [partitionKey]: partitionId, [sortKey]: sortId } = record;
 
-      const [statement, variables] = await prepareUpdate(table, schema, {
+      const [statement, variables] = await prepareUpdate(table, schema, indexes, {
         data: query.data,
         where: {
           ...(sortKey && { [sortKey]: sortId }),

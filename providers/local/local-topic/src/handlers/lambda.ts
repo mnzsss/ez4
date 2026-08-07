@@ -4,19 +4,21 @@ import type { AnyObject } from '@ez4/utils';
 import type { Topic } from '@ez4/topic';
 
 import { createModule, onBegin, onReady, onDone, onError, onEnd } from '@ez4/local-common';
-import { getRandomUUID } from '@ez4/utils';
+import { getRandomUUID, pickObject } from '@ez4/utils';
 import { Runtime } from '@ez4/common';
 
-export const processLambdaMessage = async (
+export const processLambdaEvent = async (
   service: TopicService | TopicImport,
   options: ServeOptions,
   context: EmulateServiceContext,
   subscription: TopicLambdaSubscription,
-  message: AnyObject
+  event: AnyObject
 ) => {
   const { services } = service;
 
-  const clients = context.makeClients(services);
+  const servicesInUse = event.handler.references ? pickObject(services, event.handler.references) : services;
+  const serviceClients = context.makeClients(servicesInUse);
+
   const traceId = getRandomUUID();
 
   const module = await createModule({
@@ -30,18 +32,18 @@ export const processLambdaMessage = async (
     }
   });
 
-  let currentRequest: Topic.Incoming<Topic.Message> | undefined;
+  let currentRequest: Topic.Incoming<Topic.Event> | undefined;
 
   const request = {
     requestId: getRandomUUID()
   };
 
   try {
-    await onBegin(module, clients, request);
+    await onBegin(module, serviceClients, request);
 
     currentRequest = {
       ...request,
-      message,
+      event,
       traceId
     };
 
@@ -49,16 +51,16 @@ export const processLambdaMessage = async (
       traceId
     });
 
-    await onReady(module, clients, currentRequest);
-    await module.handler(currentRequest, clients);
-    await onDone(module, clients, currentRequest);
+    await onReady(module, serviceClients, currentRequest);
+    await module.handler(currentRequest, serviceClients);
+    await onDone(module, serviceClients, currentRequest);
     //
   } catch (error) {
-    await onError(module, clients, currentRequest ?? request, error);
+    await onError(module, serviceClients, currentRequest ?? request, error);
 
     throw error;
     //
   } finally {
-    await onEnd(module, clients, request);
+    await onEnd(module, serviceClients, request);
   }
 };
